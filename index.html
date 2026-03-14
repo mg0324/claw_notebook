@@ -494,14 +494,98 @@
       font-size: 0.85rem;
     }
 
-    /* ── Count badge ── */
-    .count-badge {
+    /* ── Comments ── */
+    .comments-section {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+    .comments-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    .comments-count {
       font-size: 0.8rem;
       color: var(--text-secondary);
+      font-weight: normal;
+    }
+    .comment-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
       margin-bottom: 16px;
     }
-    .count-badge span { color: var(--accent); font-weight: 600; }
-
+    .comment-item {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 12px 14px;
+      position: relative;
+    }
+    .comment-text {
+      font-size: 0.9rem;
+      line-height: 1.6;
+      color: var(--text);
+      word-break: break-all;
+    }
+    .comment-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+    }
+    .comment-time {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+    }
+    .comment-delete {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+    .comment-delete:hover {
+      color: var(--danger);
+      background: rgba(224, 92, 92, 0.1);
+    }
+    .comment-empty {
+      text-align: center;
+      padding: 20px;
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+    }
+    .comment-form {
+      display: flex;
+      gap: 10px;
+    }
+    .comment-input {
+      flex: 1;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: var(--font);
+      font-size: 0.9rem;
+      color: var(--text);
+      background: var(--bg);
+      outline: none;
+      transition: border-color 0.15s;
+      resize: none;
+      min-height: 40px;
+      max-height: 120px;
+    }
+    .comment-input:focus {
+      border-color: var(--accent);
+      background: #fff;
+    }
+    .comment-submit {
+      padding: 10px 16px;
+    }
+    
     /* ── Scrollbar ── */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -548,6 +632,18 @@
       <div class="detail-actions">
         <button class="btn btn-ghost btn-sm" onclick="editCurrentDiary()">✏️ 编辑</button>
         <button class="btn btn-danger btn-sm" onclick="deleteCurrentDiary()">🗑 删除</button>
+      </div>
+      
+      <!-- 评论区域 -->
+      <div class="comments-section" id="commentsSection">
+        <div class="comments-header">
+          💬 评论 <span class="comments-count" id="commentsCount"></span>
+        </div>
+        <div class="comment-list" id="commentList"></div>
+        <div class="comment-form">
+          <textarea class="comment-input" id="commentInput" placeholder="写下你的评论…" rows="1" oninput="autoResize(this)" onkeypress="handleCommentKeypress(event)"></textarea>
+          <button class="btn btn-primary btn-sm comment-submit" onclick="addComment()">发布</button>
+        </div>
       </div>
     </div>
   </div>
@@ -954,6 +1050,14 @@ function showDetail(id) {
     categoryEl.style.display = 'none';
   }
 
+  // 渲染评论
+  renderComments(diary);
+  
+  // 清空评论输入框
+  const commentInput = document.getElementById('commentInput');
+  commentInput.value = '';
+  commentInput.style.height = 'auto';
+
   document.getElementById('listView').style.display = 'none';
   const dv = document.getElementById('detailView');
   dv.style.display = 'block';
@@ -1048,6 +1152,7 @@ function saveDiary() {
       content,
       date: date || todayStr(),
       category,
+      comments: [],
       createdAt: Date.now()
     };
     diaries.push(entry);
@@ -1085,7 +1190,133 @@ function confirmDelete() {
   showList();
 }
 
-// ── Toast ──
+// ── Comment Functions ──
+function addComment() {
+  const input = document.getElementById('commentInput');
+  const text = input.value.trim();
+  
+  if (!text) {
+    showToast('请输入评论内容');
+    return;
+  }
+  
+  if (!currentDiaryId) return;
+  
+  const diaries = loadDiaries();
+  const diary = diaries.find(d => d.id === currentDiaryId);
+  if (!diary) return;
+  
+  // 初始化 comments 数组（向后兼容旧数据）
+  if (!diary.comments) {
+    diary.comments = [];
+  }
+  
+  // 添加新评论
+  const comment = {
+    id: genId(),
+    text: text,
+    createdAt: Date.now()
+  };
+  
+  diary.comments.push(comment);
+  saveDiaries(diaries);
+  
+  // 清空输入框
+  input.value = '';
+  input.style.height = 'auto';
+  
+  // 重新渲染评论
+  renderComments(diary);
+  
+  showToast('💬 评论已发布');
+}
+
+function deleteComment(commentId) {
+  if (!currentDiaryId) return;
+  
+  const diaries = loadDiaries();
+  const diary = diaries.find(d => d.id === currentDiaryId);
+  if (!diary || !diary.comments) return;
+  
+  // 过滤掉要删除的评论
+  diary.comments = diary.comments.filter(c => c.id !== commentId);
+  saveDiaries(diaries);
+  
+  // 重新渲染评论
+  renderComments(diary);
+  
+  showToast('🗑 评论已删除');
+}
+
+function renderComments(diary) {
+  const listContainer = document.getElementById('commentList');
+  const countContainer = document.getElementById('commentsCount');
+  
+  const comments = diary.comments || [];
+  
+  // 更新评论数量
+  if (comments.length === 0) {
+    countContainer.textContent = '';
+    listContainer.innerHTML = '<div class="comment-empty">暂无评论，来抢沙发吧~</div>';
+    return;
+  }
+  
+  countContainer.textContent = `(${comments.length})`;
+  
+  // 按时间倒序显示（最新的在前）
+  const sortedComments = [...comments].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  
+  listContainer.innerHTML = sortedComments.map(comment => {
+    const timeStr = formatCommentTime(comment.createdAt);
+    return `
+      <div class="comment-item">
+        <div class="comment-text">${escHtml(comment.text)}</div>
+        <div class="comment-meta">
+          <span class="comment-time">${timeStr}</span>
+          <span class="comment-delete" onclick="deleteComment('${comment.id}')">删除</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function formatCommentTime(timestamp) {
+  if (!timestamp) return '';
+  
+  const now = Date.now();
+  const diff = now - timestamp;
+  
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  
+  if (diff < minute) {
+    return '刚刚';
+  } else if (diff < hour) {
+    return Math.floor(diff / minute) + '分钟前';
+  } else if (diff < day) {
+    return Math.floor(diff / hour) + '小时前';
+  } else if (diff < 7 * day) {
+    return Math.floor(diff / day) + '天前';
+  } else {
+    const date = new Date(timestamp);
+    const month = date.getMonth() + 1;
+    const dayNum = date.getDate();
+    return `${month}月${dayNum}日`;
+  }
+}
+
+function autoResize(textarea) {
+  textarea.style.height = 'auto';
+  textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+}
+
+function handleCommentKeypress(e) {
+  // Ctrl/Cmd + Enter to submit
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    addComment();
+  }
+}
 let toastTimer;
 function showToast(msg) {
   const el = document.getElementById('toast');
