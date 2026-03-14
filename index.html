@@ -586,6 +586,101 @@
       padding: 10px 16px;
     }
     
+    /* ── Reply ── */
+    .reply-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 10px;
+      margin-left: 16px;
+      padding-left: 12px;
+      border-left: 2px solid var(--border);
+    }
+    .reply-item {
+      background: var(--surface);
+      border-radius: 6px;
+      padding: 8px 10px;
+      position: relative;
+    }
+    .reply-text {
+      font-size: 0.85rem;
+      line-height: 1.5;
+      color: var(--text);
+      word-break: break-all;
+    }
+    .reply-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 5px;
+    }
+    .reply-time {
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+    }
+    .reply-delete {
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 2px 5px;
+      border-radius: 3px;
+      transition: all 0.15s;
+    }
+    .reply-delete:hover {
+      color: var(--danger);
+      background: rgba(224, 92, 92, 0.1);
+    }
+    .reply-form {
+      display: none;
+      margin-top: 10px;
+      margin-left: 16px;
+      padding-left: 12px;
+      border-left: 2px solid var(--border);
+    }
+    .reply-form.open {
+      display: flex;
+      gap: 8px;
+    }
+    .reply-input {
+      flex: 1;
+      border: 1.5px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-family: var(--font);
+      font-size: 0.85rem;
+      color: var(--text);
+      background: var(--surface);
+      outline: none;
+      transition: border-color 0.15s;
+      resize: none;
+      min-height: 36px;
+      max-height: 80px;
+    }
+    .reply-input:focus {
+      border-color: var(--accent);
+    }
+    .reply-submit {
+      padding: 8px 12px;
+      white-space: nowrap;
+    }
+    .comment-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .comment-reply-btn {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+    .comment-reply-btn:hover {
+      color: var(--accent);
+      background: rgba(212, 132, 90, 0.1);
+    }
+    
     /* ── Scrollbar ── */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -1238,7 +1333,7 @@ function deleteComment(commentId) {
   const diary = diaries.find(d => d.id === currentDiaryId);
   if (!diary || !diary.comments) return;
   
-  // 过滤掉要删除的评论
+  // 过滤掉要删除的评论（回复会随评论一起删除）
   diary.comments = diary.comments.filter(c => c.id !== commentId);
   saveDiaries(diaries);
   
@@ -1254,26 +1349,62 @@ function renderComments(diary) {
   
   const comments = diary.comments || [];
   
-  // 更新评论数量
+  // 更新评论数量（包含回复）
+  const totalComments = comments.reduce((sum, c) => {
+    return sum + 1 + (c.replies ? c.replies.length : 0);
+  }, 0);
+  
   if (comments.length === 0) {
     countContainer.textContent = '';
     listContainer.innerHTML = '<div class="comment-empty">暂无评论，来抢沙发吧~</div>';
     return;
   }
   
-  countContainer.textContent = `(${comments.length})`;
+  countContainer.textContent = `(${totalComments})`;
   
   // 按时间倒序显示（最新的在前）
   const sortedComments = [...comments].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   
   listContainer.innerHTML = sortedComments.map(comment => {
     const timeStr = formatCommentTime(comment.createdAt);
+    const replies = comment.replies || [];
+    const sortedReplies = [...replies].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    
     return `
-      <div class="comment-item">
+      <div class="comment-item" data-comment-id="${comment.id}">
         <div class="comment-text">${escHtml(comment.text)}</div>
         <div class="comment-meta">
-          <span class="comment-time">${timeStr}</span>
+          <div class="comment-actions">
+            <span class="comment-time">${timeStr}</span>
+            <span class="comment-reply-btn" onclick="toggleReplyForm('${comment.id}')">回复</span>
+          </div>
           <span class="comment-delete" onclick="deleteComment('${comment.id}')">删除</span>
+        </div>
+        
+        <!-- 回复列表 -->
+        <div class="reply-list" id="replies-${comment.id}">
+          ${sortedReplies.map(reply => `
+            <div class="reply-item">
+              <div class="reply-text">${escHtml(reply.text)}</div>
+              <div class="reply-meta">
+                <span class="reply-time">${formatCommentTime(reply.createdAt)}</span>
+                <span class="reply-delete" onclick="deleteReply('${comment.id}', '${reply.id}')">删除</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        
+        <!-- 回复输入框 -->
+        <div class="reply-form" id="reply-form-${comment.id}">
+          <textarea 
+            class="reply-input" 
+            id="reply-input-${comment.id}"
+            placeholder="写下你的回复…" 
+            rows="1"
+            oninput="autoResizeReply(this)"
+            onkeypress="handleReplyKeypress(event, '${comment.id}')"
+          ></textarea>
+          <button class="btn btn-primary btn-sm reply-submit" onclick="addReply('${comment.id}')">回复</button>
         </div>
       </div>
     `;
@@ -1311,11 +1442,111 @@ function autoResize(textarea) {
   textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
 }
 
+function autoResizeReply(textarea) {
+  textarea.style.height = 'auto';
+  textarea.style.height = Math.min(textarea.scrollHeight, 80) + 'px';
+}
+
 function handleCommentKeypress(e) {
   // Ctrl/Cmd + Enter to submit
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     addComment();
   }
+}
+
+function handleReplyKeypress(e, commentId) {
+  // Ctrl/Cmd + Enter to submit
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    addReply(commentId);
+  }
+}
+
+function toggleReplyForm(commentId) {
+  const form = document.getElementById(`reply-form-${commentId}`);
+  const input = document.getElementById(`reply-input-${commentId}`);
+  
+  if (form.classList.contains('open')) {
+    form.classList.remove('open');
+    input.value = '';
+    input.style.height = 'auto';
+  } else {
+    // 先关闭所有其他回复框
+    document.querySelectorAll('.reply-form.open').forEach(f => {
+      f.classList.remove('open');
+      const otherInput = f.querySelector('textarea');
+      otherInput.value = '';
+      otherInput.style.height = 'auto';
+    });
+    
+    form.classList.add('open');
+    input.focus();
+  }
+}
+
+function addReply(commentId) {
+  const input = document.getElementById(`reply-input-${commentId}`);
+  const text = input.value.trim();
+  
+  if (!text) {
+    showToast('请输入回复内容');
+    return;
+  }
+  
+  if (!currentDiaryId) return;
+  
+  const diaries = loadDiaries();
+  const diary = diaries.find(d => d.id === currentDiaryId);
+  if (!diary || !diary.comments) return;
+  
+  const comment = diary.comments.find(c => c.id === commentId);
+  if (!comment) return;
+  
+  // 初始化 replies 数组
+  if (!comment.replies) {
+    comment.replies = [];
+  }
+  
+  // 添加新回复
+  const reply = {
+    id: genId(),
+    text: text,
+    createdAt: Date.now()
+  };
+  
+  comment.replies.push(reply);
+  saveDiaries(diary);
+  
+  // 清空输入框
+  input.value = '';
+  input.style.height = 'auto';
+  
+  // 关闭回复框
+  document.getElementById(`reply-form-${commentId}`).classList.remove('open');
+  
+  // 重新渲染评论
+  renderComments(diary);
+  
+  showToast('↩️ 回复已发布');
+}
+
+function deleteReply(commentId, replyId) {
+  if (!currentDiaryId) return;
+  
+  const diaries = loadDiaries();
+  const diary = diaries.find(d => d.id === currentDiaryId);
+  if (!diary || !diary.comments) return;
+  
+  const comment = diary.comments.find(c => c.id === commentId);
+  if (!comment || !comment.replies) return;
+  
+  // 过滤掉要删除的回复
+  comment.replies = comment.replies.filter(r => r.id !== replyId);
+  saveDiaries(diary);
+  
+  // 重新渲染评论
+  renderComments(diary);
+  
+  showToast('🗑 回复已删除');
 }
 let toastTimer;
 function showToast(msg) {
